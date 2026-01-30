@@ -1,0 +1,11 @@
+[package]
+name = "Project_1_Part_1"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bitvec = "1"
+csv = "1"
+plotters = "0.3"
+rand = "0.8"
+serde = { version = "1", features = ["derive"] }
