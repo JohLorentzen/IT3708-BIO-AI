@@ -5,12 +5,12 @@ use serde::Deserialize;
 
 const MAX_WEIGHT: f64 = 280785.0;
 const PENALTY_FACTOR: f64 = 1000.0;
-const POPULATION_SIZE: usize = 100;
+const POPULATION_SIZE: usize = 1000;
 const MUTATION_RATE: f64 = 0.01;
 const CROSSOVER_RATE: f64 = 0.85;
-const GENERATIONS: usize = 20;
-const ELITISM_COUNT: usize = 3;
-const TOURNAMENT_SIZE: usize = 3;
+const GENERATIONS: usize = 100;
+const ELITISM_COUNT: usize = 5;
+const TOURNAMENT_SIZE: usize = 2;
 
 #[derive(Deserialize, Clone)]
 struct DataPoint {
@@ -69,26 +69,12 @@ struct GA {
 
 impl GA {
     fn new(items: Vec<DataPoint>, population_size: usize, mutation_rate: f64, crossover_rate: f64, elitism_count: usize, generations: usize) -> Self {
-        let mut population = Vec::new();
+        let mut population = Vec::with_capacity(population_size);
         let mut rng = rand::thread_rng();
-        let mut indices: Vec<usize> = (0..items.len()).collect();
-        indices.sort_by(|&a, &b| {
-            let ra = items[a].p / items[a].w.max(1e-9);
-            let rb = items[b].p / items[b].w.max(1e-9);
-            rb.partial_cmp(&ra).unwrap_or(std::cmp::Ordering::Equal)
-        });
-        let mut greedy_genes = BitVec::repeat(false, items.len());
-        let mut w = 0.0;
-        for &idx in &indices {
-            if w + items[idx].w <= MAX_WEIGHT {
-                greedy_genes.set(idx, true);
-                w += items[idx].w;
-            }
-        }
-        population.push(Individual { genes: greedy_genes, fitness: 0.0 });
-        for _ in 1..population_size {
-            let mut genes = BitVec::repeat(false, items.len());
-            for i in 0..items.len() {
+        let n_genes = items.len();
+        for _ in 0..population_size {
+            let mut genes = BitVec::repeat(false, n_genes);
+            for i in 0..n_genes {
                 if rng.gen_bool(0.4) {
                     genes.set(i, true);
                 }
