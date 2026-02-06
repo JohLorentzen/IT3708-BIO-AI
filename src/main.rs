@@ -9,7 +9,6 @@ const POPULATION_SIZE: usize = 1000;
 const MUTATION_RATE: f64 = 0.01;
 const CROSSOVER_RATE: f64 = 0.85;
 const GENERATIONS: usize = 100;
-const USE_DETERMINISTIC: bool = true;
 
 #[derive(Deserialize, Clone)]
 struct DataPoint {
@@ -63,11 +62,10 @@ struct GA {
     mutation_rate: f64,
     crossover_rate: f64,
     generations: usize,
-    use_deterministic: bool,
 }
 
 impl GA {
-    fn new(items: Vec<DataPoint>, population_size: usize, mutation_rate: f64, crossover_rate: f64, generations: usize, use_deterministic: bool) -> Self {
+    fn new(items: Vec<DataPoint>, population_size: usize, mutation_rate: f64, crossover_rate: f64, generations: usize) -> Self {
         let mut population = Vec::with_capacity(population_size);
         let mut rng = rand::thread_rng();
         let n_genes = items.len();
@@ -87,7 +85,6 @@ impl GA {
             mutation_rate,
             crossover_rate,
             generations,
-            use_deterministic,
         }
     }
 
@@ -136,44 +133,13 @@ impl GA {
         population[0].clone()
     }
 
-    fn create_children(&self) -> ((Individual, Individual), (Individual, Individual)) {
+    fn create_children(&self) -> (Individual, Individual) {
         let parent1 = self.parent_selection(&self.population);
         let parent2 = self.parent_selection(&self.population);
         let (child1, child2) = self.crossover(&parent1, &parent2);
         let child1 = self.mutation(&child1);
         let child2 = self.mutation(&child2);
-        ((parent1, child1), (parent2, child2))
-    }
-
-    fn deterministic_crowding(&self, parent1: &Individual, parent2: &Individual) -> Individual {
-        if parent1.fitness > parent2.fitness {
-            parent1.clone()
-        }
-        else if parent1.fitness < parent2.fitness {
-            parent2.clone()
-        }
-        else {
-            let mut rng = rand::thread_rng();
-            if rng.gen_bool(0.5) {
-                return parent1.clone();
-            }
-            parent2.clone()
-        }
-    }
-
-    fn probabilistic_crowding(&self, parent1: &Individual, parent2: &Individual) -> Individual {
-        let sum = parent1.fitness + parent2.fitness;
-        let probability = if sum == 0.0 {
-            0.5
-        } else {
-            (parent1.fitness / sum).clamp(0.0, 1.0)
-        };
-        let mut rng = rand::thread_rng();
-        if rng.gen_bool(probability) {
-            parent1.clone()
-        } else {
-            parent2.clone()
-        }
+        (child1, child2)
     }
 
     fn evaluate_population(&mut self) {
@@ -182,63 +148,23 @@ impl GA {
         }
     }
 
-    fn hamming_distance(&self, individual1: &Individual, individual2: &Individual) -> usize {
-        individual1.genes.iter().zip(individual2.genes.iter()).filter(|(a, b)| a != b).count()
-    }
-
-    fn survival_selection(&self, parent1: &Individual, parent2: &Individual, child1: &Individual, child2: &Individual) -> (Individual, Individual) {
-        let dist_p1_c1 = self.hamming_distance(parent1, child1);
-        let dist_p1_c2 = self.hamming_distance(parent1, child2);
-        
-        if self.use_deterministic {
-            // Deterministic crowding: select based on hamming distance
-            if dist_p1_c1 < dist_p1_c2 {
-                (self.deterministic_crowding(parent1, child1), self.deterministic_crowding(parent2, child2))
-            } else if dist_p1_c1 > dist_p1_c2 {
-                (self.deterministic_crowding(parent1, child2), self.deterministic_crowding(parent2, child1))
-            } else {
-                // Equal distance: randomly choose
-                let mut rng = rand::thread_rng();
-                if rng.gen_bool(0.5) {
-                    (self.deterministic_crowding(parent1, child1), self.deterministic_crowding(parent2, child2))
-                } else {
-                    (self.deterministic_crowding(parent1, child2), self.deterministic_crowding(parent2, child1))
-                }
-            }
-        } else {
-            // Probabilistic crowding: select based on hamming distance
-            if dist_p1_c1 < dist_p1_c2 {
-                (self.probabilistic_crowding(parent1, child1), self.probabilistic_crowding(parent2, child2))
-            } else if dist_p1_c1 > dist_p1_c2 {
-                (self.probabilistic_crowding(parent1, child2), self.probabilistic_crowding(parent2, child1))
-            } else {
-                // Equal distance: randomly choose
-                let mut rng = rand::thread_rng();
-                if rng.gen_bool(0.5) {
-                    (self.probabilistic_crowding(parent1, child1), self.probabilistic_crowding(parent2, child2))
-                } else {
-                    (self.probabilistic_crowding(parent1, child2), self.probabilistic_crowding(parent2, child1))
-                }
-            }
-        }
-    }
-
     fn run(&mut self) -> (Individual, Vec<(usize, f64, f64, f64)>) {
         let mut history = Vec::new();
         self.evaluate_population();
 
         for gen in 0..self.generations {
-            let mut new_population = Vec::with_capacity(self.population_size);
+            // Create offspring population of the same size
+            let mut offspring = Vec::with_capacity(self.population_size);
             for _ in 0..(self.population_size / 2) {
-                let ((parent1, mut child1), (parent2, mut child2)) = self.create_children();
+                let (mut child1, mut child2) = self.create_children();
                 child1.fitness = child1.fitness(&self.items);
                 child2.fitness = child2.fitness(&self.items);
-                let (survivor1, survivor2) = self.survival_selection(&parent1, &parent2, &child1, &child2);
-                new_population.push(survivor1);
-                new_population.push(survivor2);
+                offspring.push(child1);
+                offspring.push(child2);
             }
-            self.population = new_population;
-            self.evaluate_population();
+            
+            // Generational replacement: replace entire population with offspring
+            self.population = offspring;
 
             let min_f = self.population.iter().map(|i| i.fitness).fold(f64::INFINITY, f64::min);
             let max_f = self.population.iter().map(|i| i.fitness).fold(f64::NEG_INFINITY, f64::max);
@@ -287,7 +213,7 @@ fn read_items(path: &str) -> Vec<DataPoint> {
 
 fn main() {
     let items = read_items("data/knapPI_12_500_1000_82.csv");
-    let mut ga = GA::new(items, POPULATION_SIZE, MUTATION_RATE, CROSSOVER_RATE, GENERATIONS, USE_DETERMINISTIC);
+    let mut ga = GA::new(items, POPULATION_SIZE, MUTATION_RATE, CROSSOVER_RATE, GENERATIONS);
     let start = std::time::Instant::now();
     let (best, history) = ga.run();
     let elapsed = start.elapsed();
