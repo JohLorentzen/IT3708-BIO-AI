@@ -182,11 +182,44 @@ impl GA {
         }
     }
 
-    fn survival_selection(&self, parent: &Individual, child: &Individual) -> Individual {
+    fn hamming_distance(&self, individual1: &Individual, individual2: &Individual) -> usize {
+        individual1.genes.iter().zip(individual2.genes.iter()).filter(|(a, b)| a != b).count()
+    }
+
+    fn survival_selection(&self, parent1: &Individual, parent2: &Individual, child1: &Individual, child2: &Individual) -> (Individual, Individual) {
+        let dist_p1_c1 = self.hamming_distance(parent1, child1);
+        let dist_p1_c2 = self.hamming_distance(parent1, child2);
+        
         if self.use_deterministic {
-            self.deterministic_crowding(parent, child)
+            // Deterministic crowding: select based on hamming distance
+            if dist_p1_c1 < dist_p1_c2 {
+                (self.deterministic_crowding(parent1, child1), self.deterministic_crowding(parent2, child2))
+            } else if dist_p1_c1 > dist_p1_c2 {
+                (self.deterministic_crowding(parent1, child2), self.deterministic_crowding(parent2, child1))
+            } else {
+                // Equal distance: randomly choose
+                let mut rng = rand::thread_rng();
+                if rng.gen_bool(0.5) {
+                    (self.deterministic_crowding(parent1, child1), self.deterministic_crowding(parent2, child2))
+                } else {
+                    (self.deterministic_crowding(parent1, child2), self.deterministic_crowding(parent2, child1))
+                }
+            }
         } else {
-            self.probabilistic_crowding(parent, child)
+            // Probabilistic crowding: select based on hamming distance
+            if dist_p1_c1 < dist_p1_c2 {
+                (self.probabilistic_crowding(parent1, child1), self.probabilistic_crowding(parent2, child2))
+            } else if dist_p1_c1 > dist_p1_c2 {
+                (self.probabilistic_crowding(parent1, child2), self.probabilistic_crowding(parent2, child1))
+            } else {
+                // Equal distance: randomly choose
+                let mut rng = rand::thread_rng();
+                if rng.gen_bool(0.5) {
+                    (self.probabilistic_crowding(parent1, child1), self.probabilistic_crowding(parent2, child2))
+                } else {
+                    (self.probabilistic_crowding(parent1, child2), self.probabilistic_crowding(parent2, child1))
+                }
+            }
         }
     }
 
@@ -200,8 +233,7 @@ impl GA {
                 let ((parent1, mut child1), (parent2, mut child2)) = self.create_children();
                 child1.fitness = child1.fitness(&self.items);
                 child2.fitness = child2.fitness(&self.items);
-                let survivor1 = self.survival_selection(&parent1, &child1);
-                let survivor2 = self.survival_selection(&parent2, &child2);
+                let (survivor1, survivor2) = self.survival_selection(&parent1, &parent2, &child1, &child2);
                 new_population.push(survivor1);
                 new_population.push(survivor2);
             }
