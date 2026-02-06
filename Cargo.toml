@@ -1,11 +1,14 @@
 [package]
-name = "Project_1_Part_1"
+name = "project-part-2"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 bitvec = "1"
 csv = "1"
+ndarray = "0.16"
+linfa = "0.8"
+linfa-linear = "0.8"
 plotters = "0.3"
 rand = "0.8"
 serde = { version = "1", features = ["derive"] }
