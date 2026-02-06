@@ -121,7 +121,7 @@ impl GA {
         return Individual { genes: mutated, fitness: 0.0 };
     }
 
-    fn roulette_wheel_selection(&self, population: &[Individual]) -> Individual {
+    fn parent_selection(&self, population: &[Individual]) -> Individual {
         let min_f = population.iter().map(|i| i.fitness).fold(f64::INFINITY, f64::min);
         let sum: f64 = population.iter().map(|i| i.fitness - min_f + 1e-10).sum();
         let mut rng = rand::thread_rng();
@@ -136,9 +136,9 @@ impl GA {
         population[0].clone()
     }
 
-    fn select_parents_and_create_children(&self) -> ((Individual, Individual), (Individual, Individual)) {
-        let parent1 = self.roulette_wheel_selection(&self.population);
-        let parent2 = self.roulette_wheel_selection(&self.population);
+    fn create_children(&self) -> ((Individual, Individual), (Individual, Individual)) {
+        let parent1 = self.parent_selection(&self.population);
+        let parent2 = self.parent_selection(&self.population);
         let (child1, child2) = self.crossover(&parent1, &parent2);
         let child1 = self.mutation(&child1);
         let child2 = self.mutation(&child2);
@@ -197,7 +197,7 @@ impl GA {
         for gen in 0..self.generations {
             let mut new_population = Vec::with_capacity(self.population_size);
             for _ in 0..(self.population_size / 2) {
-                let ((parent1, mut child1), (parent2, mut child2)) = self.select_parents_and_create_children();
+                let ((parent1, mut child1), (parent2, mut child2)) = self.create_children();
                 child1.fitness = child1.fitness(&self.items);
                 child2.fitness = child2.fitness(&self.items);
                 let survivor1 = self.survival_selection(&parent1, &child1);
