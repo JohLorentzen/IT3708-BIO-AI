@@ -6,32 +6,32 @@ use linfa::prelude::*;
 use linfa_linear::LinearRegression;
 
 #[derive(Clone, Copy, Debug)]
-enum SurvivalSelection {
+pub enum SurvivalSelection {
     Generational,
     DeterministicCrowding,
     ProbabilisticCrowding,
 }
 
-const POPULATION_SIZE: usize = 100;
-const MUTATION_RATE: f64 = 0.01;
-const CROSSOVER_RATE: f64 = 0.85;
-const GENERATIONS: usize = 50;
-const RANDOM_SEED: u64 = 42;
+pub const POPULATION_SIZE: usize = 100;
+pub const MUTATION_RATE: f64 = 0.001;
+pub const CROSSOVER_RATE: f64 = 0.85;
+pub const GENERATIONS: usize = 50;
+pub const RANDOM_SEED: u64 = 42;
 
-const ELITISM: bool = false;
-const ELITE_COUNT: usize = 5;
-const SURVIVAL_SELECTION: SurvivalSelection = SurvivalSelection::Generational;
+pub const ELITISM: bool = true;
+pub const ELITE_COUNT: usize = 5;
+pub const SURVIVAL_SELECTION: SurvivalSelection = SurvivalSelection::ProbabilisticCrowding;
 
 
-struct Dataset {
-    features: Array2<f64>,
-    target: Array1<f64>,
+pub struct Dataset {
+    pub features: Array2<f64>,
+    pub target: Array1<f64>,
 }
 
 #[derive(Clone, Debug)]
-struct Individual {
-    genes: BitVec,
-    fitness: f64,
+pub struct Individual {
+    pub genes: BitVec,
+    pub fitness: f64,
 }
 
 impl Individual {
@@ -132,10 +132,10 @@ impl Individual {
     }
 }
 
-struct GA {
+pub struct GA {
     population: Vec<Individual>,
     dataset: Dataset,
-    fitness_cache: HashMap<BitVec, f64>,
+    pub fitness_cache: HashMap<BitVec, f64>,
     population_size: usize,
     mutation_rate: f64,
     crossover_rate: f64,
@@ -144,7 +144,7 @@ struct GA {
 }
 
 impl GA {
-    fn new(dataset: Dataset, population_size: usize, mutation_rate: f64, crossover_rate: f64, generations: usize, survival_selection: SurvivalSelection) -> Self {
+    pub fn new(dataset: Dataset, population_size: usize, mutation_rate: f64, crossover_rate: f64, generations: usize, survival_selection: SurvivalSelection) -> Self {
         let mut population = Vec::with_capacity(population_size);
         let mut rng = rand::thread_rng();
         let n_genes = dataset.features.ncols();
@@ -260,7 +260,6 @@ impl GA {
                 entropy -= p_zero * p_zero.log2();
             }
         }
-        
         entropy
     }
 
@@ -279,7 +278,7 @@ impl GA {
         }
     }
 
-    fn run(&mut self) -> (Individual, Vec<(usize, f64, f64, f64, f64)>) {
+    pub fn run(&mut self) -> (Individual, Vec<(usize, f64, f64, f64, f64)>) {
         let mut history = Vec::new();
         self.evaluate_population();
 
@@ -391,7 +390,7 @@ impl GA {
         (best, history)
     }
 
-    fn write_fitness_history(&self, history: &[(usize, f64, f64, f64, f64)]) {
+    pub fn write_fitness_history(&self, history: &[(usize, f64, f64, f64, f64)]) {
         let elitism_suffix = if ELITISM { format!("_Elitism{}", ELITE_COUNT) } else { String::new() };
         let filename = format!("fitness_history_{:?}{}.csv", self.survival_selection, elitism_suffix);
         let mut wtr = csv::Writer::from_path(&filename).unwrap();
@@ -411,7 +410,7 @@ impl GA {
         wtr.flush().unwrap();
     }
 
-    fn write_entropy_history(&self, history: &[(usize, f64, f64, f64, f64)]) {
+    pub fn write_entropy_history(&self, history: &[(usize, f64, f64, f64, f64)]) {
         let elitism_suffix = if ELITISM { format!("_Elitism{}", ELITE_COUNT) } else { String::new() };
         let filename = format!("entropy_history_{:?}{}.csv", self.survival_selection, elitism_suffix);
         let mut wtr = csv::Writer::from_path(&filename).unwrap();
@@ -429,7 +428,7 @@ impl GA {
     }
 }
 
-fn load_dataset(path: &str) -> Dataset {
+pub fn load_dataset(path: &str) -> Dataset {
     let mut rdr = csv::ReaderBuilder::new()
         .has_headers(false)
         .from_path(path)
@@ -458,30 +457,4 @@ fn load_dataset(path: &str) -> Dataset {
     }
     
     Dataset { features, target }
-}
-
-fn main() {
-    let dataset = load_dataset("data/dataset.txt");
-    println!("Loaded dataset: {} samples, {} features", dataset.features.nrows(), dataset.features.ncols());
-    println!("Survival selection: {:?}", SURVIVAL_SELECTION);
-    println!("Elitism: {} (Elite count: {})\n", ELITISM, if ELITISM { ELITE_COUNT } else { 0 });
-    
-    let mut ga = GA::new(dataset, POPULATION_SIZE, MUTATION_RATE, CROSSOVER_RATE, GENERATIONS, SURVIVAL_SELECTION);
-    let start = std::time::Instant::now();
-    let (best, history) = ga.run();
-    let elapsed = start.elapsed();
-    
-    let n_selected = best.genes.iter().filter(|b| **b).count();
-    println!("\nResults:");
-    println!("Best RMSE: {:.6}", best.fitness);
-    println!("Number of features selected: {}/{}", n_selected, best.genes.len());
-    println!("GA run time: {:.2?}", elapsed);
-    println!("Fitness cache size: {}", ga.fitness_cache.len());
-    
-    println!("\nWriting data to CSV files...");
-    ga.write_fitness_history(&history);
-    ga.write_entropy_history(&history);
-    let elitism_str = if ELITISM { format!("_Elitism{}", ELITE_COUNT) } else { String::new() };
-    println!("Data saved as fitness_history_{:?}{}.csv and entropy_history_{:?}{}.csv", 
-             SURVIVAL_SELECTION, elitism_str, SURVIVAL_SELECTION, elitism_str);
 }
