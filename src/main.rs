@@ -9,8 +9,7 @@ const POPULATION_SIZE: usize = 1000;
 const MUTATION_RATE: f64 = 0.01;
 const CROSSOVER_RATE: f64 = 0.85;
 const GENERATIONS: usize = 100;
-const ELITISM_COUNT: usize = 5;
-const TOURNAMENT_SIZE: usize = 2;
+const USE_DETERMINISTIC: bool = true;
 
 #[derive(Deserialize, Clone)]
 struct DataPoint {
@@ -63,12 +62,12 @@ struct GA {
     population_size: usize,
     mutation_rate: f64,
     crossover_rate: f64,
-    elitism_count: usize,
     generations: usize,
+    use_deterministic: bool,
 }
 
 impl GA {
-    fn new(items: Vec<DataPoint>, population_size: usize, mutation_rate: f64, crossover_rate: f64, elitism_count: usize, generations: usize) -> Self {
+    fn new(items: Vec<DataPoint>, population_size: usize, mutation_rate: f64, crossover_rate: f64, generations: usize, use_deterministic: bool) -> Self {
         let mut population = Vec::with_capacity(population_size);
         let mut rng = rand::thread_rng();
         let n_genes = items.len();
@@ -87,30 +86,9 @@ impl GA {
             population_size,
             mutation_rate,
             crossover_rate,
-            elitism_count,
             generations,
+            use_deterministic,
         }
-    }
-
-    fn tournament_select(&self, items: &[DataPoint]) -> Individual {
-        let mut rng = rand::thread_rng();
-        let mut best = self.population[rng.gen_range(0..self.population_size)].clone();
-        best.fitness = best.fitness(items);
-        for _ in 1..TOURNAMENT_SIZE {
-            let idx = rng.gen_range(0..self.population_size);
-            let mut cand = self.population[idx].clone();
-            cand.fitness = cand.fitness(items);
-            if cand.fitness > best.fitness {
-                best = cand;
-            }
-        }
-        best
-    }
-
-    fn parent_selection(&self, items: &[DataPoint]) -> (Individual, Individual) {
-        let p1 = self.tournament_select(items);
-        let p2 = self.tournament_select(items);
-        (p1, p2)
     }
 
     fn crossover(&self, parent1: &Individual, parent2: &Individual) -> (Individual, Individual) {
@@ -143,44 +121,100 @@ impl GA {
         return Individual { genes: mutated, fitness: 0.0 };
     }
 
-    fn survival_selection(&self, items: &[DataPoint]) -> Vec<Individual> {
-        let mut next = Vec::with_capacity(self.population_size);
-        let mut sorted: Vec<Individual> = self.population.iter().cloned().collect();
-        for ind in &mut sorted {
-            ind.fitness = ind.fitness(items);
-        }
-        sorted.sort_by(|a, b| b.fitness.partial_cmp(&a.fitness).unwrap());
-        for i in 0..self.elitism_count.min(sorted.len()) {
-            next.push(sorted[i].clone());
-        }
-        while next.len() < self.population_size {
-            let (p1, p2) = self.parent_selection(items);
-            let (mut c1, mut c2) = self.crossover(&p1, &p2);
-            c1 = self.mutation(&c1);
-            c2 = self.mutation(&c2);
-            next.push(c1);
-            if next.len() < self.population_size {
-                next.push(c2);
+    fn roulette_wheel_selection(&self, population: &[Individual]) -> Individual {
+        let min_f = population.iter().map(|i| i.fitness).fold(f64::INFINITY, f64::min);
+        let sum: f64 = population.iter().map(|i| i.fitness - min_f + 1e-10).sum();
+        let mut rng = rand::thread_rng();
+        let mut r = rng.gen_range(0.0..sum);
+        for individual in population {
+            let weight = individual.fitness - min_f + 1e-10;
+            if r < weight {
+                return individual.clone();
             }
+            r -= weight;
         }
-        for ind in &mut next {
-            ind.fitness = ind.fitness(items);
+        population[0].clone()
+    }
+
+    fn select_parents_and_create_children(&self) -> ((Individual, Individual), (Individual, Individual)) {
+        let parent1 = self.roulette_wheel_selection(&self.population);
+        let parent2 = self.roulette_wheel_selection(&self.population);
+        let (child1, child2) = self.crossover(&parent1, &parent2);
+        let child1 = self.mutation(&child1);
+        let child2 = self.mutation(&child2);
+        ((parent1, child1), (parent2, child2))
+    }
+
+    fn deterministic_crowding(&self, parent1: &Individual, parent2: &Individual) -> Individual {
+        if parent1.fitness > parent2.fitness {
+            parent1.clone()
         }
-        next.sort_by(|a, b| b.fitness.partial_cmp(&a.fitness).unwrap());
-        next
+        else if parent1.fitness < parent2.fitness {
+            parent2.clone()
+        }
+        else {
+            let mut rng = rand::thread_rng();
+            if rng.gen_bool(0.5) {
+                return parent1.clone();
+            }
+            parent2.clone()
+        }
+    }
+
+    fn probabilistic_crowding(&self, parent1: &Individual, parent2: &Individual) -> Individual {
+        let sum = parent1.fitness + parent2.fitness;
+        let probability = if sum == 0.0 {
+            0.5
+        } else {
+            (parent1.fitness / sum).clamp(0.0, 1.0)
+        };
+        let mut rng = rand::thread_rng();
+        if rng.gen_bool(probability) {
+            parent1.clone()
+        } else {
+            parent2.clone()
+        }
+    }
+
+    fn evaluate_population(&mut self) {
+        for individual in &mut self.population {
+            individual.fitness = individual.fitness(&self.items);
+        }
+    }
+
+    fn survival_selection(&self, parent: &Individual, child: &Individual) -> Individual {
+        if self.use_deterministic {
+            self.deterministic_crowding(parent, child)
+        } else {
+            self.probabilistic_crowding(parent, child)
+        }
     }
 
     fn run(&mut self) -> (Individual, Vec<(usize, f64, f64, f64)>) {
         let mut history = Vec::new();
+        self.evaluate_population();
+
         for gen in 0..self.generations {
-            let selected = self.survival_selection(&self.items);
-            self.population = selected;
+            let mut new_population = Vec::with_capacity(self.population_size);
+            for _ in 0..(self.population_size / 2) {
+                let ((parent1, mut child1), (parent2, mut child2)) = self.select_parents_and_create_children();
+                child1.fitness = child1.fitness(&self.items);
+                child2.fitness = child2.fitness(&self.items);
+                let survivor1 = self.survival_selection(&parent1, &child1);
+                let survivor2 = self.survival_selection(&parent2, &child2);
+                new_population.push(survivor1);
+                new_population.push(survivor2);
+            }
+            self.population = new_population;
+            self.evaluate_population();
+
             let min_f = self.population.iter().map(|i| i.fitness).fold(f64::INFINITY, f64::min);
             let max_f = self.population.iter().map(|i| i.fitness).fold(f64::NEG_INFINITY, f64::max);
             let mean_f = self.population.iter().map(|i| i.fitness).sum::<f64>() / self.population_size as f64;
             history.push((gen, min_f, mean_f, max_f));
         }
-        (self.population[0].clone(), history)
+        let best = self.population.iter().max_by(|a, b| a.fitness.partial_cmp(&b.fitness).unwrap()).unwrap().clone();
+        (best, history)
     }
 
     fn plot_fitness_history(&self, history: Vec<(usize, f64, f64, f64)>) {
@@ -221,7 +255,7 @@ fn read_items(path: &str) -> Vec<DataPoint> {
 
 fn main() {
     let items = read_items("data/knapPI_12_500_1000_82.csv");
-    let mut ga = GA::new(items, POPULATION_SIZE, MUTATION_RATE, CROSSOVER_RATE, ELITISM_COUNT, GENERATIONS);
+    let mut ga = GA::new(items, POPULATION_SIZE, MUTATION_RATE, CROSSOVER_RATE, GENERATIONS, USE_DETERMINISTIC);
     let start = std::time::Instant::now();
     let (best, history) = ga.run();
     let elapsed = start.elapsed();
