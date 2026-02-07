@@ -263,6 +263,105 @@ impl GA {
         entropy
     }
 
+    fn evolve_generation(&mut self) {
+        let elite_individuals = if ELITISM {
+            let mut sorted_pop = self.population.clone();
+            sorted_pop.sort_by(|a, b| a.fitness.partial_cmp(&b.fitness).unwrap());
+            sorted_pop.into_iter().take(ELITE_COUNT).collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
+        
+        let target_size = if ELITISM {
+            self.population_size - ELITE_COUNT
+        } else {
+            self.population_size
+        };
+
+        let new_population = match self.survival_selection {
+            SurvivalSelection::Generational => {
+                let mut offspring = Vec::with_capacity(target_size);
+                for _ in 0..(target_size / 2) {
+                    let (_, _, mut child1, mut child2) = self.create_children();
+                    child1.fitness = child1.fitness(&self.dataset, &mut self.fitness_cache);
+                    child2.fitness = child2.fitness(&self.dataset, &mut self.fitness_cache);
+                    offspring.push(child1);
+                    offspring.push(child2);
+                }
+                if target_size % 2 == 1 {
+                    let (_, _, mut child1, _) = self.create_children();
+                    child1.fitness = child1.fitness(&self.dataset, &mut self.fitness_cache);
+                    offspring.push(child1);
+                }
+                offspring
+            }
+            SurvivalSelection::DeterministicCrowding => {
+                let mut new_pop = Vec::with_capacity(target_size);
+                for _ in 0..(target_size / 2) {
+                    let (parent1, parent2, mut child1, mut child2) = self.create_children();
+                    child1.fitness = child1.fitness(&self.dataset, &mut self.fitness_cache);
+                    child2.fitness = child2.fitness(&self.dataset, &mut self.fitness_cache);
+                    
+                    let dist_p1_c1 = self.hamming_distance(&parent1, &child1);
+                    let dist_p1_c2 = self.hamming_distance(&parent1, &child2);
+                    
+                    let (survivor1, survivor2) = if dist_p1_c1 < dist_p1_c2 {
+                        (self.deterministic_crowding(&parent1, &child1), 
+                         self.deterministic_crowding(&parent2, &child2))
+                    } else {
+                        (self.deterministic_crowding(&parent1, &child2), 
+                         self.deterministic_crowding(&parent2, &child1))
+                    };
+                    
+                    new_pop.push(survivor1);
+                    new_pop.push(survivor2);
+                }
+                if target_size % 2 == 1 {
+                    let (parent1, _, mut child1, _) = self.create_children();
+                    child1.fitness = child1.fitness(&self.dataset, &mut self.fitness_cache);
+                    new_pop.push(self.deterministic_crowding(&parent1, &child1));
+                }
+                new_pop
+            }
+            SurvivalSelection::ProbabilisticCrowding => {
+                let mut new_pop = Vec::with_capacity(target_size);
+                for _ in 0..(target_size / 2) {
+                    let (parent1, parent2, mut child1, mut child2) = self.create_children();
+                    child1.fitness = child1.fitness(&self.dataset, &mut self.fitness_cache);
+                    child2.fitness = child2.fitness(&self.dataset, &mut self.fitness_cache);
+                    
+                    let dist_p1_c1 = self.hamming_distance(&parent1, &child1);
+                    let dist_p1_c2 = self.hamming_distance(&parent1, &child2);
+                    
+                    let (survivor1, survivor2) = if dist_p1_c1 < dist_p1_c2 {
+                        (self.probabilistic_crowding(&parent1, &child1), 
+                         self.probabilistic_crowding(&parent2, &child2))
+                    } else {
+                        (self.probabilistic_crowding(&parent1, &child2), 
+                         self.probabilistic_crowding(&parent2, &child1))
+                    };
+                    
+                    new_pop.push(survivor1);
+                    new_pop.push(survivor2);
+                }
+                if target_size % 2 == 1 {
+                    let (parent1, _, mut child1, _) = self.create_children();
+                    child1.fitness = child1.fitness(&self.dataset, &mut self.fitness_cache);
+                    new_pop.push(self.probabilistic_crowding(&parent1, &child1));
+                }
+                new_pop
+            }
+        };
+
+        if ELITISM {
+            self.population = elite_individuals.into_iter()
+                .chain(new_population.into_iter())
+                .collect();
+        } else {
+            self.population = new_population;
+        }
+    }
+
     fn create_children(&self) -> (Individual, Individual, Individual, Individual) {
         let parent1 = self.parent_selection(&self.population);
         let parent2 = self.parent_selection(&self.population);
@@ -283,109 +382,15 @@ impl GA {
         self.evaluate_population();
 
         for generation in 0..self.generations {
-            let elite_individuals = if ELITISM {
-                let mut sorted_pop = self.population.clone();
-                sorted_pop.sort_by(|a, b| a.fitness.partial_cmp(&b.fitness).unwrap());
-                sorted_pop.into_iter().take(ELITE_COUNT).collect::<Vec<_>>()
-            } else {
-                Vec::new()
-            };
+            self.evolve_generation();
             
-            let target_size = if ELITISM {
-                self.population_size - ELITE_COUNT
-            } else {
-                self.population_size
-            };
-
-            let new_population = match self.survival_selection {
-                SurvivalSelection::Generational => {
-                    let mut offspring = Vec::with_capacity(target_size);
-                    for _ in 0..(target_size / 2) {
-                        let (_, _, mut child1, mut child2) = self.create_children();
-                        child1.fitness = child1.fitness(&self.dataset, &mut self.fitness_cache);
-                        child2.fitness = child2.fitness(&self.dataset, &mut self.fitness_cache);
-                        offspring.push(child1);
-                        offspring.push(child2);
-                    }
-                    if target_size % 2 == 1 {
-                        let (_, _, mut child1, _) = self.create_children();
-                        child1.fitness = child1.fitness(&self.dataset, &mut self.fitness_cache);
-                        offspring.push(child1);
-                    }
-                    offspring
-                }
-                SurvivalSelection::DeterministicCrowding => {
-                    let mut new_pop = Vec::with_capacity(target_size);
-                    for _ in 0..(target_size / 2) {
-                        let (parent1, parent2, mut child1, mut child2) = self.create_children();
-                        child1.fitness = child1.fitness(&self.dataset, &mut self.fitness_cache);
-                        child2.fitness = child2.fitness(&self.dataset, &mut self.fitness_cache);
-                        
-                        let dist_p1_c1 = self.hamming_distance(&parent1, &child1);
-                        let dist_p1_c2 = self.hamming_distance(&parent1, &child2);
-                        
-                        let (survivor1, survivor2) = if dist_p1_c1 < dist_p1_c2 {
-                            (self.deterministic_crowding(&parent1, &child1), 
-                             self.deterministic_crowding(&parent2, &child2))
-                        } else {
-                            (self.deterministic_crowding(&parent1, &child2), 
-                             self.deterministic_crowding(&parent2, &child1))
-                        };
-                        
-                        new_pop.push(survivor1);
-                        new_pop.push(survivor2);
-                    }
-                    if target_size % 2 == 1 {
-                        let (parent1, _, mut child1, _) = self.create_children();
-                        child1.fitness = child1.fitness(&self.dataset, &mut self.fitness_cache);
-                        new_pop.push(self.deterministic_crowding(&parent1, &child1));
-                    }
-                    new_pop
-                }
-                SurvivalSelection::ProbabilisticCrowding => {
-                    let mut new_pop = Vec::with_capacity(target_size);
-                    for _ in 0..(target_size / 2) {
-                        let (parent1, parent2, mut child1, mut child2) = self.create_children();
-                        child1.fitness = child1.fitness(&self.dataset, &mut self.fitness_cache);
-                        child2.fitness = child2.fitness(&self.dataset, &mut self.fitness_cache);
-                        
-                        let dist_p1_c1 = self.hamming_distance(&parent1, &child1);
-                        let dist_p1_c2 = self.hamming_distance(&parent1, &child2);
-                        
-                        let (survivor1, survivor2) = if dist_p1_c1 < dist_p1_c2 {
-                            (self.probabilistic_crowding(&parent1, &child1), 
-                             self.probabilistic_crowding(&parent2, &child2))
-                        } else {
-                            (self.probabilistic_crowding(&parent1, &child2), 
-                             self.probabilistic_crowding(&parent2, &child1))
-                        };
-                        
-                        new_pop.push(survivor1);
-                        new_pop.push(survivor2);
-                    }
-                    if target_size % 2 == 1 {
-                        let (parent1, _, mut child1, _) = self.create_children();
-                        child1.fitness = child1.fitness(&self.dataset, &mut self.fitness_cache);
-                        new_pop.push(self.probabilistic_crowding(&parent1, &child1));
-                    }
-                    new_pop
-                }
-            };
-
-            if ELITISM {
-                self.population = elite_individuals.into_iter()
-                    .chain(new_population.into_iter())
-                    .collect();
-            } else {
-                self.population = new_population;
-            }
-
             let min_f = self.population.iter().map(|i| i.fitness).fold(f64::INFINITY, f64::min);
             let max_f = self.population.iter().map(|i| i.fitness).fold(f64::NEG_INFINITY, f64::max);
             let mean_f = self.population.iter().map(|i| i.fitness).sum::<f64>() / self.population_size as f64;
             let entropy = self.calculate_entropy();
             history.push((generation, min_f, mean_f, max_f, entropy));
         }
+        
         let best = self.population.iter().min_by(|a, b| a.fitness.partial_cmp(&b.fitness).unwrap()).unwrap().clone();
         (best, history)
     }
