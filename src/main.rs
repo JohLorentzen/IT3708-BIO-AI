@@ -1,8 +1,12 @@
 mod featureSelection;
 mod knapsack;
 
+// Switch between these two lines to change modes:
+// use featureSelection::*;  // For Feature Selection mode
 use featureSelection::*;
 
+
+// FEATURE SELECTION MODE
 fn main() {
     let dataset = load_dataset("data/dataset.txt");
     println!("Survival selection: {:?}", SURVIVAL_SELECTION);
@@ -29,8 +33,7 @@ fn main() {
 }
 
 /*
-// KNAPSACK MODE - To use this, comment out the featureSelection main above 
-// and uncomment this one. Also change the use statement to: use knapsack::*;
+// KNAPSACK MODE
 fn main() {
     let items = read_items("data/knapPI_12_500_1000_82.csv");
     let mut ga = GA::new(items, POPULATION_SIZE, MUTATION_RATE, CROSSOVER_RATE, GENERATIONS, SURVIVAL_SELECTION);

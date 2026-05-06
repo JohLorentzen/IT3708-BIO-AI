@@ -3,25 +3,25 @@ use plotters::prelude::*;
 use rand::Rng;
 use serde::Deserialize;
 
-const MAX_WEIGHT: f64 = 280785.0;
-const PENALTY_FACTOR: f64 = 1000.0;
-const POPULATION_SIZE: usize = 1000;
-const MUTATION_RATE: f64 = 0.01;
-const CROSSOVER_RATE: f64 = 0.85;
-const GENERATIONS: usize = 50;
-const SURVIVAL_SELECTION: usize = 2;
+pub const MAX_WEIGHT: f64 = 280785.0;
+pub const PENALTY_FACTOR: f64 = 1000.0;
+pub const POPULATION_SIZE: usize = 1000;
+pub const MUTATION_RATE: f64 = 0.01;
+pub const CROSSOVER_RATE: f64 = 0.85;
+pub const GENERATIONS: usize = 50;
+pub const SURVIVAL_SELECTION: usize = 2;
 
 #[derive(Deserialize, Clone)]
-struct DataPoint {
-    i: f64,
-    p: f64,
-    w: f64,
+pub struct DataPoint {
+    pub i: f64,
+    pub p: f64,
+    pub w: f64,
 }
 
 #[derive(Clone, Debug)]
-struct Individual {
-    genes: BitVec,
-    fitness: f64,
+pub struct Individual {
+    pub genes: BitVec,
+    pub fitness: f64,
 }
 
 impl Individual {
@@ -56,7 +56,7 @@ impl Individual {
     }
 }
 
-struct GA {
+pub struct GA {
     population: Vec<Individual>,
     items: Vec<DataPoint>,
     population_size: usize,
@@ -67,7 +67,7 @@ struct GA {
 }
 
 impl GA {
-    fn new(items: Vec<DataPoint>, population_size: usize, mutation_rate: f64, crossover_rate: f64, generations: usize, survival_selection: usize) -> Self {
+    pub fn new(items: Vec<DataPoint>, population_size: usize, mutation_rate: f64, crossover_rate: f64, generations: usize, survival_selection: usize) -> Self {
         let mut population = Vec::with_capacity(population_size);
         let mut rng = rand::thread_rng();
         let n_genes = items.len();
@@ -178,7 +178,7 @@ impl GA {
         }
     }
 
-    fn run(&mut self) -> (Individual, Vec<(usize, f64, f64, f64)>) {
+    pub fn run(&mut self) -> (Individual, Vec<(usize, f64, f64, f64)>) {
         let mut history = Vec::new();
         self.evaluate_population();
 
@@ -253,7 +253,7 @@ impl GA {
         (best, history)
     }
 
-    fn plot_fitness_history(&self, history: Vec<(usize, f64, f64, f64)>) {
+    pub fn plot_fitness_history(&self, history: Vec<(usize, f64, f64, f64)>) {
         let y_max = history.iter().map(|(_, _, _, max)| *max).fold(0.0_f64, f64::max);
         let y_min = history.iter().map(|(_, min, _, _)| *min).fold(f64::INFINITY, f64::min);
         let padding = (y_max - y_min).max(100.0) * 0.05;
@@ -284,7 +284,7 @@ impl GA {
     }
 }
 
-fn read_items(path: &str) -> Vec<DataPoint> {
+pub fn read_items(path: &str) -> Vec<DataPoint> {
     let mut rdr = csv::Reader::from_path(path).unwrap();
     rdr.deserialize().map(|r| r.unwrap()).collect()
 }
